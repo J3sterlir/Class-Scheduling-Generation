@@ -12,8 +12,15 @@ passport.use(
     },
     async (_accessToken, _refreshToken, profile, done) => {
       try {
+        if (!profile.emails || !profile.emails[0]) {
+          console.error("❌ No email from Google profile:", profile);
+          return done(new Error("No email in Google profile"));
+        }
+
         const email = profile.emails[0].value;
         const name  = profile.displayName;
+
+        console.log(`🔐 Google auth for: ${email}`);
 
         // Upsert user — insert on first login, return existing on subsequent logins
         const { rows } = await pool.query(
@@ -25,8 +32,15 @@ passport.use(
           [profile.id, email, name]
         );
 
+        if (!rows[0]) {
+          console.error("❌ No user returned from database insert");
+          return done(new Error("Failed to create/fetch user"));
+        }
+
+        console.log(`✅ User authenticated: ${rows[0].email} (ID: ${rows[0].user_id})`);
         return done(null, rows[0]);
       } catch (err) {
+        console.error("❌ Passport Google strategy error:", err.message);
         return done(err, null);
       }
     }
