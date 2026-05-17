@@ -12,19 +12,40 @@ const { authenticate } = require("./middleware/auth");
 
 const app = express();
 
-app.use(cors({ origin: process.env.CLIENT_URL || "*", credentials: true }));
+// ─── CORS — must be before all routes ────────────────────────────────────────
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://class-scheduling-generation-subsyst.vercel.app",
+  process.env.CLIENT_URL
+].filter(Boolean);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (Postman, curl, server-to-server)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error(`CORS blocked: ${origin}`));
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
+}));
+
+// Handle preflight OPTIONS requests for all routes
+app.options("*", cors());
+
 app.use(express.json());
 app.use(passport.initialize());
 
-// ─── Public routes ─────────────────────────────────────────────────────────
+// ─── Public routes ────────────────────────────────────────────────────────────
 app.use("/api/auth", authRoutes);
 
-// ─── Protected routes (require valid JWT) ──────────────────────────────────
+// ─── Protected routes ────────────────────────────────────────────────────────
 app.use("/api/schedules", authenticate, scheduleRoutes);
 app.use("/api/courses",   authenticate, courseRoutes);
 app.use("/api/rooms",     authenticate, roomRoutes);
 
-// ─── Health check ───────────────────────────────────────────────────────────
+// ─── Health check ─────────────────────────────────────────────────────────────
 app.get("/", async (req, res) => {
   try {
     const pool = require("./config/db");
