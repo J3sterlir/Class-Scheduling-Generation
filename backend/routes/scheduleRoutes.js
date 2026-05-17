@@ -1,7 +1,6 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../config/db");
-const axios = require("axios");
 const { detectConflicts } = require("../utils/conflictEngine");
 
 // POST /api/schedules
@@ -49,8 +48,12 @@ router.post("/", async (req, res) => {
 // Auto-generate schedules for all course offerings
 router.post("/generate", async (req, res) => {
   try {
-    const courseResponse = await axios.get("http://localhost:5000/api/courses/offerings");
-    const courses = courseResponse.data.courses;
+    const courseResult = await pool.query(
+      `SELECT course_code, section, units, section_capacity, semester
+       FROM course_offerings
+       ORDER BY course_code`
+    );
+    const courses = courseResult.rows;
 
     if (!courses || courses.length === 0) {
       return res.status(400).json({ message: "No course offerings available" });
@@ -240,6 +243,99 @@ router.put("/:scheduleId", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Error updating schedule" });
+  }
+});
+
+// POST /api/schedules/conflicts/ignore
+// Mark a conflict as ignored (both schedule IDs provided)
+router.post("/conflicts/ignore", async (req, res) => {
+  try {
+    const { schedule_1_id, schedule_2_id } = req.body;
+
+    if (!schedule_1_id || !schedule_2_id) {
+      return res.status(400).json({
+        message: "Both schedule_1_id and schedule_2_id required"
+      });
+    }
+
+    // For now, just confirm the action
+    // In production, you'd store this in a conflict_ignores table
+    console.log(`✅ Marked conflict between schedules ${schedule_1_id} and ${schedule_2_id} as ignored`);
+
+    res.json({
+      message: "Conflict marked as ignored",
+      schedule_1_id,
+      schedule_2_id
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Error ignoring conflict" });
+  }
+});
+
+// POST /api/schedules/conflicts/resolve/:scheduleId
+// Move a conflicting schedule to a new time slot (requires body: { room_id, day, start_time, end_time })
+router.post("/conflicts/resolve/:scheduleId", async (req, res) => {
+  try {
+    const { scheduleId } = req.params;
+    const { room_id, day, start_time, end_time } = req.body;
+
+    if (!room_id || !day || !start_time || !end_time) {
+      return res.status(400).json({
+        message: "room_id, day, start_time, end_time required"
+      });
+    }
+
+    // Verify schedule exists
+    const existing = await pool.query(
+      "SELECT * FROM schedules WHERE schedule_id = $1",
+      [scheduleId]
+    );
+
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ message: "Schedule not found" });
+    }
+
+    // Check for conflicts with the new slot (excluding this schedule)
+    const conflict = await pool.query(
+      `SELECT * FROM schedules
+       WHERE room_id = $1
+         AND LOWER(day) = LOWER($2)
+         AND schedule_id != $5
+         AND start_time < $4::time
+         AND end_time   > $3::time`,
+      [room_id, day, start_time, end_time, scheduleId]
+    );
+
+    if (conflict.rows.length > 0) {
+      return res.status(409).json({
+        message: "New slot would still have conflicts",
+        conflicts: conflict.rows
+      });
+    }
+
+    // Update the schedule
+    const result = await pool.query(
+      `UPDATE schedules
+       SET room_id    = $1,
+           day        = $2,
+           start_time = $3::time,
+           end_time   = $4::time,
+           status     = 'scheduled'
+       WHERE schedule_id = $5
+       RETURNING *`,
+      [room_id, day, start_time, end_time, scheduleId]
+    );
+
+    console.log(`✅ Resolved conflict: Schedule ${scheduleId} moved to ${day} ${start_time}-${end_time} in room ${room_id}`);
+
+    res.json({
+      message: "Conflict resolved - schedule moved",
+      data: result.rows[0]
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Error resolving conflict" });
   }
 });
 

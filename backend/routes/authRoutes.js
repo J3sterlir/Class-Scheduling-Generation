@@ -15,21 +15,37 @@ router.get(
   "/google/callback",
   passport.authenticate("google", { session: false, failureRedirect: "/login" }),
   (req, res) => {
-    const user = req.user;
+    try {
+      const user = req.user;
 
-    const token = jwt.sign(
-      {
-        user_id: user.user_id,
-        email:   user.email,
-        name:    user.name,
-        role:    user.role
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+      if (!user) {
+        console.error("❌ No user returned from Google auth");
+        return res.status(500).json({ message: "No user data from Google" });
+      }
 
-    const clientURL = process.env.CLIENT_URL || "http://localhost:5173";
-    res.redirect(`${clientURL}/auth/callback?token=${token}`);
+      if (!process.env.JWT_SECRET) {
+        console.error("❌ JWT_SECRET not configured");
+        return res.status(500).json({ message: "Server configuration error" });
+      }
+
+      const token = jwt.sign(
+        {
+          user_id: user.user_id,
+          email:   user.email,
+          name:    user.name,
+          role:    user.role
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: "7d" }
+      );
+
+      const clientURL = process.env.CLIENT_URL || "http://localhost:5173";
+      console.log(`✅ Login successful for ${user.email}, redirecting to ${clientURL}/auth/callback`);
+      res.redirect(`${clientURL}/auth/callback?token=${token}`);
+    } catch (err) {
+      console.error("❌ Auth callback error:", err.message);
+      res.status(500).json({ message: "Authentication failed", error: err.message });
+    }
   }
 );
 
@@ -52,6 +68,18 @@ router.get("/me", (req, res) => {
     });
   } catch (err) {
     res.status(401).json({ message: "Invalid or expired token" });
+  }
+});
+
+router.post("/logout", (req, res) => {
+  try {
+    // Token is already cleared on the frontend
+    // This endpoint just confirms the logout on the backend
+    console.log("✅ User logged out");
+    res.json({ message: "Logout successful" });
+  } catch (err) {
+    console.error("❌ Logout error:", err.message);
+    res.status(500).json({ message: "Logout failed", error: err.message });
   }
 });
 
