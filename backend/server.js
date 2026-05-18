@@ -15,7 +15,7 @@ const app = express();
 // ─── CORS — must be before all routes ────────────────────────────────────────
 const allowedOrigins = [
   "http://localhost:5173",
-  "https://class-scheduling-generation-subsyst.vercel.app",
+  "https://class-scheduling-generation.vercel.app",
   process.env.CLIENT_URL
 ].filter(Boolean);
 
