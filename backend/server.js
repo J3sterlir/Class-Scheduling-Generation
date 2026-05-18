@@ -19,7 +19,7 @@ const allowedOrigins = [
   process.env.CLIENT_URL
 ].filter(Boolean);
 
-app.use(cors({
+const corsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (Postman, curl, server-to-server)
     if (!origin) return callback(null, true);
@@ -29,10 +29,12 @@ app.use(cors({
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true
-}));
+};
+
+app.use(cors(corsOptions));
 
 // Handle preflight OPTIONS requests for all routes
-app.options("/{*path}", cors());
+app.options('*', cors(corsOptions));
 
 app.use(express.json());
 app.use(passport.initialize());
